@@ -12,7 +12,10 @@
     "cors": "^2.8.5",
     "dotenv": "^16.0.3",
     "pg": "^8.10.0",
-    "anthropic": "^0.20.9"
+    "@anthropic-ai/sdk": "^0.9.0",
+    "body-parser": "^1.20.2",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2"
   },
   "engines": {
     "node": "18.x"
