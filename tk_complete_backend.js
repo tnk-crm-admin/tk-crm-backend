@@ -686,6 +686,152 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK' });
 });
 
+```javascript
+// ====================================================================
+// STOCK ITEMS ENDPOINTS (for dropdown/reference)
+// ====================================================================
+
+// GET all stock items for dropdowns
+app.get('/api/stock-items', authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, sku, name, division, category, unit, minimum_stock_level, is_active
+       FROM stock_items
+       WHERE is_active = true
+       ORDER BY name ASC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Stock items error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET stock items by division
+app.get('/api/stock-items/division/:division', authenticateToken, async (req, res) => {
+  const { division } = req.params;
+  try {
+    const result = await pool.query(
+      `SELECT id, sku, name, category, unit
+       FROM stock_items
+       WHERE (division = $1 OR division = 'both') AND is_active = true
+       ORDER BY name ASC`,
+      [division]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ====================================================================
+// STOCK BATCHES ENDPOINTS (Batch management)
+// ====================================================================
+
+// GET stock batches (with expiry filtering)
+app.get('/api/stock-batches', authenticateToken, async (req, res) => {
+  const { status, expiry_status } = req.query;
+  try {
+    let query = `
+      SELECT 
+        sb.id, sb.stock_item_id, sb.batch_number, sb.expiry_date, 
+        sb.manufacturing_date, sb.supplier, sb.quantity_in_stock, 
+        sb.status, sb.date_received, sb.location,
+        si.sku, si.name,
+        CASE 
+          WHEN sb.expiry_date < CURRENT_DATE THEN 'Expired'
+          WHEN sb.expiry_date <= CURRENT_DATE + INTERVAL '3 months' THEN 'Expiring in 3 months'
+          WHEN sb.expiry_date <= CURRENT_DATE + INTERVAL '6 months' THEN 'Expiring in 6 months'
+          ELSE 'OK'
+        END as expiry_status
+      FROM stock_batches sb
+      JOIN stock_items si ON sb.stock_item_id = si.id
+      WHERE 1=1`;
+    
+    const params = [];
+    if (status) {
+      query += ` AND sb.status = $${params.length + 1}`;
+      params.push(status);
+    }
+    
+    query += ` ORDER BY sb.expiry_date ASC`;
+    
+    const result = await pool.query(query, params);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET single batch
+app.get('/api/stock-batches/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      `SELECT * FROM stock_batches WHERE id = $1`,
+      [id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Batch not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// CREATE stock batch (Ms. Chong receives stock)
+app.post('/api/stock-batches', authenticateToken, async (req, res) => {
+  const { stock_item_id, batch_number, expiry_date, manufacturing_date, supplier, quantity_in_stock, date_received, location } = req.body;
+  
+  try {
+    const result = await pool.query(
+      `INSERT INTO stock_batches 
+       (stock_item_id, batch_number, expiry_date, manufacturing_date, supplier, quantity_in_stock, status, date_received, location)
+       VALUES ($1, $2, $3, $4, $5, $6, 'Available', $7, $8)
+       RETURNING *`,
+      [stock_item_id, batch_number, expiry_date, manufacturing_date, supplier, quantity_in_stock, date_received, location]
+    );
+    
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Create batch error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// UPDATE batch status (CORRECTED - removed updated_by reference)
+app.put('/api/stock-batches/:id', authenticateToken, async (req, res) => {
+  const { id } = req.params;
+  const { status, quantity_in_stock } = req.body;
+  
+  try {
+    const updateFields = [];
+    const params = [id];
+    
+    if (status) {
+      params.push(status);
+      updateFields.push(`status = $${params.length}`);
+    }
+    if (quantity_in_stock !== undefined) {
+      params.push(quantity_in_stock);
+      updateFields.push(`quantity_in_stock = $${params.length}`);
+    }
+    
+    updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
+    
+    const query = `UPDATE stock_batches SET ${updateFields.join(', ')} WHERE id = $1 RETURNING *`;
+    const result = await pool.query(query, params);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Batch not found' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+```
 // ============================================
 // START SERVER
 // ============================================
