@@ -686,7 +686,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK' });
 });
 
-```javascript
+
 // ====================================================================
 // STOCK ITEMS ENDPOINTS (for dropdown/reference)
 // ====================================================================
